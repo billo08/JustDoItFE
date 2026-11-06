@@ -2,6 +2,7 @@
   const $ = (id) => document.getElementById(id);
   const SESSION_KEY = 'justdoit.user';
   const STATUS_LABEL = { PENDING: 'Pendiente', INPROGRESS: 'En progreso', DONE: 'Hecha' };
+  const NEXT_STATUS = { PENDING: 'INPROGRESS', INPROGRESS: 'DONE' };
 
   let currentUser = null;
   let users = [];
@@ -58,11 +59,17 @@
   $('login-form').onsubmit = (e) => {
     e.preventDefault();
     guard(async () => {
-      const name = $('login-username').value.trim().toLowerCase();
-      const list = await Api.users.list();
-      const found = list.find((u) => (u.userName || '').toLowerCase() === name);
-      if (!found) throw new Error('Usuario no encontrado');
-      startSession(found);
+      const name = $('login-username').value.trim();
+      if (!name) throw new Error('Ingresa tu nombre de usuario');
+      try {
+        const found = await Api.users.getByUsername(name);
+        startSession(found);
+      } catch (err) {
+        if (err.message === 'Error HTTP 404') {
+          throw new Error('Usuario no encontrado');
+        }
+        throw err;
+      }
     });
   };
 
@@ -186,15 +193,20 @@
         await Api.tasks.update(targetUserId(), t.id, { status: select.value });
         await loadTasks();
       });
+      const next = NEXT_STATUS[t.status];
       list.append(el('article', { class: 'card task ' + t.status },
         el('div', { class: 'row' }, el('span', { class: 'badge ' + t.status }, STATUS_LABEL[t.status] || t.status),
           el('span', { class: 'meta' }, '#' + t.id)),
         el('p', {}, t.description || ''),
         el('div', { class: 'meta' }, 'Límite: ' + (t.deadline || '-') + ' · Creada: ' + fmtDate(t.createdAt)),
         select,
-        el('div', { class: 'row' },
-          el('button', { class: 'btn ghost small', onclick: () => openTaskDialog(t) }, 'Editar'),
-          el('button', { class: 'btn danger small', onclick: () => deleteTask(t) }, 'Eliminar'))));
+          el('div', { class: 'row' },
+              next ? el('button', { class: 'btn small', onclick: () => guard(async () => {
+                  await Api.tasks.update(targetUserId(), t.id, { status: next });
+                  await loadTasks();
+                }) }, 'Avanzar') : '',
+              el('button', { class: 'btn ghost small', onclick: () => openTaskDialog(t) }, 'Editar'),
+              el('button', { class: 'btn danger small', onclick: () => deleteTask(t) }, 'Eliminar'))));
     });
   }
 
